@@ -1,50 +1,44 @@
-# 🧬 LigandConv: Multi-Scale 1D-CNNs for High-Throughput Protein Binding Prediction
+# 🧬 LigandConv: Multi-Scale 1D-CNNs for High-Throughput Binding
 
-### **MAIS 202 Final Project — AI for Drug Discovery**
-
-**Team:** Gavin Xiong, Karen Li, William Zheng
+**MAIS 202 Final Project** | **Team:** Gavin Xiong, Karen Li, William Zheng
 
 ---
 
-## 🏗️ Technical Development Log
+## 🏗️ Implementation Log
 
-### **📅 Feb 18, 2026: Architectural Pivot & Research Spike**
+### **📅 Mar 1, 2026: Current Architecture**
 
-* **Original Plan:** Dual-view Siamese Network (SMILES 1D-CNN + Fingerprint MLP) using InfoNCE loss.
-* **Status:** `Archived` (Pre-implementation Research)
+We are treating SMILES strings as 1D signals to detect chemical motifs through parallel convolutional kernels. This approach is optimized for high-throughput screening on the **133M row BELKA dataset**.
 
-**Decision Rationale:**
-
-* **Technical Direction:** Following a design review with our TPM, the team pivoted from unsupervised Contrastive Learning to a supervised pipeline. This ensured focus on the core binding classification task and avoided the "cold-start" problem of training a dual-encoder on unlabelled data.
-* **Data Scale vs. Pipeline Latency:** Preprocessing 100k+ molecules for the original plan was projected to exceed our dev timeline. By switching to the **BELKA (Leash Bio)** dataset, we gained access to 133M standardized rows, allowing us to focus on **high-throughput modeling** rather than data engineering.
-* **Hardware Efficiency (M4 Optimization):** While the **24GB Unified Memory on the M4** provides significant headroom, stable Contrastive Learning (InfoNCE) requires extremely high negative sample density ($>512$ batch size). A supervised **1D-CNN** allows for faster gradient convergence and better utilization of the **Metal Performance Shaders (MPS)** backend for sequence processing.
+* **Feature Extraction:** Multi-scale 1D-CNN blocks (kernels: 3, 5, 7). Parallelizing kernel sizes allows the model to capture hierarchical pharmacophores, ranging from local atomic bonds to macro-molecular aromatic structures.
+* **Backend:** Native **MPS (Metal Performance Shaders)** integration. The pipeline is tuned to saturate the **24GB Unified Memory bandwidth** of the M4 chip, minimizing CPU-GPU latency.
+* **Data Pipeline:** High-performance Parquet I/O. We utilize memory-mapped file access to handle 133M row subsets without overflowing the local heap.
+* **Objective Function:** Weighted Binary Cross-Entropy ($1:20$ ratio). This specific weighting compensates for the extreme sparsity of the binder class (0.5% prevalence) in the Leash Bio dataset.
 
 ---
 
-### **📅 Mar 1, 2026: 1D-CNN Implementation Strategy**
+### **📅 Feb 18, 2026: Architectural Pivot**
 
-* **Strategy:** Sequence-to-Binding classification via 1D signal processing.
-* **Status:** `Active / Optimization Phase`
+The original proposal for a Siamese Network using InfoNCE loss was archived following a feasibility review.
 
-The current iteration of **LigandConv** treats SMILES strings as 1D signals. The architecture is designed to detect hierarchical chemical motifs through a series of parallel convolutional kernels.
-
-**Current Technical Focus:**
-
-* **Backend:** Optimization for **Apple Silicon (MPS)** to leverage M4-specific memory bandwidth.
-* **Encoder:** High-dimensional embedding layer for SMILES tokenization.
-* **Feature Extraction:** Multi-scale 1D-CNN blocks designed to capture varying bond lengths and aromatic structures.
-* **Imbalance Handling:** Weighted Binary Cross-Entropy ($1:20$ ratio) to address the sparse binder distribution in the BELKA set.
+* **Numerical Stability:** Mathematical analysis of InfoNCE suggested a high risk of **latent space collapse** given the low sample density ($N \approx 5k$) of early-stage BBB datasets.
+* **Scale Shift:** Transitioned to the **BELKA (Leash Bio)** schema to prioritize model robustness over complex data engineering.
+* **Convergence:** Switched to a supervised 1D-CNN to guarantee gradient stability within the 10-week development cycle.
 
 ---
 
-## 💻 Hardware & Environment
+## 📂 Project Structure
 
-* **Platform:** M4 Mac (**24GB Unified Memory**)
-* **Compute:** Metal Performance Shaders (MPS)
-* **Data Scale:** 133M rows (BELKA Subset)
+* **`src/`**: Model definitions and MPS-accelerated training loops.
+* **`data/`**: Configuration for Parquet ingestion and SMILES tokenization.
+* **`research/`**:
+    * [Phase 1 Proposal: BBB Permeability](https://github.com/teamgman/LigandConv/blob/main/research/Deliverable_1_Project_Proposal.pdf) (Deliverable 1 Archive).
 
-| Module | Version | Role |
-| --- | --- | --- |
-| `torch` | 2.2+ | MPS Accelerated Training |
-| `rdkit` | 2023.09 | SMILES Tokenization |
-| `pandas` | 2.1.0 | Parquet Data Handling |
+
+---
+
+## 💻 Environment & Hardware
+
+* **Compute:** M4 Mac (**24GB Unified Memory**)
+* **Acceleration:** `torch.device("mps")`
+* **Dependencies:** `torch` 2.2+, `rdkit` 2023.09, `pandas` (FastParquet).
